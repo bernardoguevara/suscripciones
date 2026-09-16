@@ -190,6 +190,7 @@ input:focus,select:focus{outline:2px solid var(--ink);outline-offset:1px}
 .hidden{display:none}
 .gate{position:fixed;inset:0;z-index:80;background:var(--bg);display:flex;align-items:center;
   justify-content:center;padding:24px}
+.gate.hidden{display:none}
 .gate-box{width:100%;max-width:400px}
 .gate-box h2{font-size:30px;font-weight:800;letter-spacing:-.035em;margin:0 0 10px}
 .gate-box p{font-size:15px;font-weight:600;color:var(--ink-soft);line-height:1.5;margin:0 0 22px}
@@ -220,6 +221,7 @@ input:focus,select:focus{outline:2px solid var(--ink);outline-offset:1px}
 
 <script>
 window.__errs=[];
+
 function paintErr(){
   var b=document.getElementById('errbar');
   if(!b){
@@ -239,6 +241,12 @@ window.addEventListener('error',function(e){
 window.addEventListener('unhandledrejection',function(e){
   window.__errs.push('promesa: '+((e.reason&&e.reason.message)||e.reason));
   paintErr();
+});
+</script>
+
+<script nomodule>
+document.addEventListener('DOMContentLoaded',function(){
+  
 });
 </script>
 
@@ -554,7 +562,10 @@ function showFbError(msg){
  }
  setLive(false);
 }
-document.getElementById('gateNew').addEventListener('click',()=>enterHome(newCode()));
+document.getElementById('gateNew').addEventListener('click',()=>{
+ subs=SEED.slice();
+ enterHome(newCode());
+});
 document.getElementById('gateJoin').addEventListener('click',()=>{
  const c=cleanCode(document.getElementById('gateCode').value);
  if(c.length<20){document.getElementById('gateErr').classList.remove('hidden');return}
@@ -840,8 +851,8 @@ else{subs=[];}
 setLive(false);
 
 loadFirebase()
- .then(()=>{ if(HOME)listen(); })
- .catch(e=>showFbError((e&&e.message)||String(e)));
+ .then(()=>{  if(HOME)listen(); })
+ .catch(e=>{  showFbError((e&&e.message)||String(e)); });
 
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
