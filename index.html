@@ -218,6 +218,30 @@ input:focus,select:focus{outline:2px solid var(--ink);outline-offset:1px}
   <g id="i-other"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4l2.5 2"/></g>
 </defs></svg>
 
+<script>
+window.__errs=[];
+function paintErr(){
+  var b=document.getElementById('errbar');
+  if(!b){
+    b=document.createElement('div');b.id='errbar';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:999;background:#7A1020;color:#fff;'+
+      'font:11.5px/1.45 ui-monospace,Menlo,Consolas,monospace;padding:12px 14px;white-space:pre-wrap;'+
+      'max-height:45vh;overflow:auto;-webkit-user-select:text;user-select:text';
+    b.addEventListener('click',function(){this.remove()});
+    (document.body||document.documentElement).appendChild(b);
+  }
+  b.textContent='Toca para cerrar\n\n'+window.__errs.join('\n---\n');
+}
+window.addEventListener('error',function(e){
+  window.__errs.push((e.message||'error')+(e.filename?' @ '+e.filename.split('/').pop()+':'+e.lineno:''));
+  paintErr();
+});
+window.addEventListener('unhandledrejection',function(e){
+  window.__errs.push('promesa: '+((e.reason&&e.reason.message)||e.reason));
+  paintErr();
+});
+</script>
+
 <div class="gate" id="gate">
   <div class="gate-box">
     <h2>Tu hogar</h2>
@@ -358,9 +382,8 @@ input:focus,select:focus{outline:2px solid var(--ink);outline-offset:1px}
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot }
-  from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
+const SDK="https://www.gstatic.com/firebasejs/12.17.1/";
+let FS=null, fdb=null, fbError='';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAIBI_0S-GXSN0oAYg_65zAzy7SVc9eexA",
@@ -370,8 +393,17 @@ const firebaseConfig = {
   messagingSenderId: "559735839426",
   appId: "1:559735839426:web:f51569ba4bcd5b816bb95b"
 };
-const fbApp = initializeApp(firebaseConfig);
-const fdb = getFirestore(fbApp);
+try{
+  const [appMod, fsMod] = await Promise.all([
+    import(SDK+"firebase-app.js"),
+    import(SDK+"firebase-firestore.js")
+  ]);
+  FS = fsMod;
+  fdb = fsMod.getFirestore(appMod.initializeApp(firebaseConfig));
+}catch(e){
+  fbError = (e && e.message) || String(e);
+  console.error('Firebase no cargó:', e);
+}
 
 const HOMEKEY='subs.home';
 let HOME=null;
@@ -448,8 +480,8 @@ function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(subs))}catch(e)
 
 /* ---------- sincronización ---------- */
 let live=false, readOnly=false, firstSnap=true;
-function subsCol(){return collection(fdb,'homes',HOME,'subs')}
-function metaDoc(){return doc(fdb,'homes',HOME,'meta','settings')}
+function subsCol(){return FS.collection(fdb,'homes',HOME,'subs')}
+function metaDoc(){return FS.doc(fdb,'homes',HOME,'meta','settings')}
 function setLive(v){
  live=v;
  const d=document.getElementById('syncDot');
@@ -457,7 +489,8 @@ function setLive(v){
  d.title=v?'Sincronizado':'Sin conexión — se guarda local';
 }
 function listen(){
- onSnapshot(subsCol(),snap=>{
+ if(!fdb){setLive(false);return}
+ FS.onSnapshot(subsCol(),snap=>{
   const rows=[];
   snap.forEach(d=>rows.push(Object.assign({id:d.id},d.data())));
   if(firstSnap){
@@ -466,7 +499,7 @@ function listen(){
   }
   subs=rows;saveLocal();setLive(true);renderAll();
  },()=>setLive(false));
- onSnapshot(metaDoc(),d=>{
+ FS.onSnapshot(metaDoc(),d=>{
   const v=d.exists()?d.data().fx:null;
   if(v>0&&v!==fxUSD){
    fxUSD=v;saveFx(v);
@@ -476,25 +509,26 @@ function listen(){
  },()=>{});
 }
 async function pushAll(){
+ if(!fdb)return;
  for(const x of subs){const {id,...rest}=x;
-  try{await setDoc(doc(subsCol(),id),rest)}catch(e){setLive(false)}}
+  try{await FS.setDoc(FS.doc(subsCol(),id),rest)}catch(e){setLive(false)}}
 }
 async function pushOne(x){
  saveLocal();
- if(!HOME)return;
+ if(!HOME||!fdb)return;
  const {id,...rest}=x;
- try{await setDoc(doc(subsCol(),id),rest);setLive(true)}catch(e){setLive(false)}
+ try{await FS.setDoc(FS.doc(subsCol(),id),rest);setLive(true)}catch(e){setLive(false)}
 }
 async function dropOne(id){
  saveLocal();
- if(!HOME)return;
- try{await deleteDoc(doc(subsCol(),id));setLive(true)}catch(e){setLive(false)}
+ if(!HOME||!fdb)return;
+ try{await FS.deleteDoc(FS.doc(subsCol(),id));setLive(true)}catch(e){setLive(false)}
 }
 let fxTimer=null;
 function pushFx(v){
- if(!HOME)return;
+ if(!HOME||!fdb)return;
  clearTimeout(fxTimer);
- fxTimer=setTimeout(()=>{setDoc(metaDoc(),{fx:v}).catch(()=>{})},700);
+ fxTimer=setTimeout(()=>{FS.setDoc(metaDoc(),{fx:v}).catch(()=>{})},700);
 }
 
 /* ---------- hogar ---------- */
@@ -510,6 +544,11 @@ function enterHome(code){
  try{localStorage.setItem(HOMEKEY,code)}catch(e){}
  document.getElementById('gate').classList.add('hidden');
  renderAll();listen();
+}
+if(fbError){
+ const el=document.getElementById('gateErr');
+ el.textContent='Sin conexión a la base de datos ('+fbError+'). Puedes entrar: los datos se guardan en este dispositivo.';
+ el.classList.remove('hidden');
 }
 document.getElementById('gateNew').addEventListener('click',()=>enterHome(newCode()));
 document.getElementById('gateJoin').addEventListener('click',()=>{
