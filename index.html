@@ -393,16 +393,15 @@ const firebaseConfig = {
   messagingSenderId: "559735839426",
   appId: "1:559735839426:web:f51569ba4bcd5b816bb95b"
 };
-try{
-  const [appMod, fsMod] = await Promise.all([
-    import(SDK+"firebase-app.js"),
-    import(SDK+"firebase-firestore.js")
+async function loadFirebase(){
+  const timeout = new Promise((_,rej)=>
+    setTimeout(()=>rej(new Error('la red no respondió en 8 segundos')),8000));
+  const [appMod, fsMod] = await Promise.race([
+    Promise.all([import(SDK+"firebase-app.js"), import(SDK+"firebase-firestore.js")]),
+    timeout
   ]);
   FS = fsMod;
   fdb = fsMod.getFirestore(appMod.initializeApp(firebaseConfig));
-}catch(e){
-  fbError = (e && e.message) || String(e);
-  console.error('Firebase no cargó:', e);
 }
 
 const HOMEKEY='subs.home';
@@ -543,12 +542,17 @@ function enterHome(code){
  HOME=code;
  try{localStorage.setItem(HOMEKEY,code)}catch(e){}
  document.getElementById('gate').classList.add('hidden');
- renderAll();listen();
+ renderAll();
+ if(fdb)listen(); else if(fbError)setLive(false);
 }
-if(fbError){
+function showFbError(msg){
+ fbError=msg;
  const el=document.getElementById('gateErr');
- el.textContent='Sin conexión a la base de datos ('+fbError+'). Puedes entrar: los datos se guardan en este dispositivo.';
- el.classList.remove('hidden');
+ if(el){
+  el.textContent='Sin base de datos ('+msg+'). Puedes usar la app igual: se guarda en este dispositivo.';
+  el.classList.remove('hidden');
+ }
+ setLive(false);
 }
 document.getElementById('gateNew').addEventListener('click',()=>enterHome(newCode()));
 document.getElementById('gateJoin').addEventListener('click',()=>{
@@ -831,8 +835,13 @@ function renderAll(){
  if(!document.getElementById('viewCal').classList.contains('hidden'))renderCal();
  if(!document.getElementById('viewSpend').classList.contains('hidden'))renderSpend();
 }
-if(HOME){document.getElementById('gate').classList.add('hidden');renderAll();listen()}
+if(HOME){document.getElementById('gate').classList.add('hidden');renderAll()}
 else{subs=[];}
+setLive(false);
+
+loadFirebase()
+ .then(()=>{ if(HOME)listen(); })
+ .catch(e=>showFbError((e&&e.message)||String(e)));
 
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
