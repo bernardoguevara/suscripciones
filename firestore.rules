@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Todo vive bajo /homes/{codigo}. El codigo es de 24 caracteres
+    // aleatorios: quien lo tiene, entra. No se puede listar /homes,
+    // asi que no hay forma de descubrir codigos ajenos.
+    match /homes/{home}/{document=**} {
+      allow read, write: if home.size() >= 20;
+    }
+  }
+}
