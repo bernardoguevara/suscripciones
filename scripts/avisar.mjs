@@ -43,10 +43,23 @@ function dinero(n, cur) {
 
 async function enviar(tokens, titulo, cuerpo) {
   if (!tokens.length) return { ok: 0, fallidos: [] };
+  // La notificacion va armada dentro de webpush.notification: asi la muestra
+  // el navegador directamente, sin depender de que el service worker despierte.
   const res = await fcm.sendEachForMulticast({
     tokens: tokens.map(t => t.token),
-    data: { title: titulo, body: cuerpo, tag: 'cobro-' + Date.now(), url: '/suscripciones/' },
-    webpush: { headers: { Urgency: 'high', TTL: '86400' } }
+    webpush: {
+      headers: { Urgency: 'high', TTL: '86400' },
+      notification: {
+        title: titulo,
+        body: cuerpo,
+        icon: '/suscripciones/icon-192.png',
+        badge: '/suscripciones/icon-192.png',
+        tag: 'cobro',
+        renotify: true,
+        requireInteraction: false
+      },
+      fcmOptions: { link: 'https://bernardoguevara.github.io/suscripciones/' }
+    }
   });
   const fallidos = [];
   res.responses.forEach((r, i) => {
