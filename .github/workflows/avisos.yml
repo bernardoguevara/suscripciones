@@ -17,10 +17,11 @@ jobs:
   avisar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
+          package-manager-cache: false
       - run: npm install firebase-admin@13 --no-save
       - run: node scripts/avisar.mjs ${{ inputs.modo || 'real' }}
         env:
