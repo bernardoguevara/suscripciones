@@ -1,0 +1,27 @@
+name: Avisos de cobro
+
+on:
+  schedule:
+    # 14:00 UTC = 8:00 de la manana en Monterrey
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'real = avisa solo lo que toca · prueba = manda un aviso de prueba ahora'
+        required: true
+        default: prueba
+        type: choice
+        options: [prueba, real]
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin@13 --no-save
+      - run: node scripts/avisar.mjs ${{ inputs.modo || 'real' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
