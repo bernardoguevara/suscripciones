@@ -15,6 +15,9 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(function (payload) {
+  // Si el mensaje ya trae la notificacion armada, el navegador la muestra solo:
+  // dibujarla aqui tambien produciria dos avisos iguales.
+  if (payload.notification) return;
   const d = payload.data || {};
   self.registration.showNotification(d.title || 'Cobro próximo', {
     body: d.body || '',
