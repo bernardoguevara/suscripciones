@@ -950,8 +950,17 @@ loadFirebase()
  .then(()=>{  if(HOME)listen(); })
  .catch(e=>{  showFbError((e&&e.message)||String(e)); });
 
-if('serviceWorker' in navigator&&Notification&&Notification.permission==='granted'){
- navigator.serviceWorker.register('firebase-messaging-sw.js').catch(()=>{});
+if('serviceWorker' in navigator){
+ navigator.serviceWorker.getRegistrations().then(rs=>{
+  rs.forEach(r=>{
+   const u=(r.active&&r.active.scriptURL)||(r.installing&&r.installing.scriptURL)||'';
+   // el sw.js viejo recibia el push sin mostrar nada: Chrome rellenaba
+   // con "este sitio se actualizo en segundo plano". Fuera.
+   if(u&&u.indexOf('firebase-messaging-sw.js')===-1)r.unregister();
+  });
+  if(window.Notification&&Notification.permission==='granted')
+   navigator.serviceWorker.register('firebase-messaging-sw.js').catch(()=>{});
+ }).catch(()=>{});
 }
 </script>
 </body>
