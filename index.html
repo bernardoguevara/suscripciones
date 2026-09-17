@@ -198,6 +198,9 @@ input:focus,select:focus{outline:2px solid var(--ink);outline-offset:1px}
 .gate-box .btn{width:100%;margin-bottom:0}
 .gate-box input{text-align:center;letter-spacing:.04em;font-size:15px}
 .gate-err{font-size:13.5px;font-weight:700;color:#D14343;margin-top:12px;text-align:center}
+.notif-txt{font-size:14px;font-weight:600;color:var(--ink-soft);line-height:1.5;margin:0 0 16px}
+.notif-txt.ok{color:#1E9E5A}
+.notif-txt.bad{color:#D14343}
 .codebox{background:var(--surface);border-radius:16px;padding:14px 16px;font-size:14px;font-weight:700;
   word-break:break-all;line-height:1.5;margin-bottom:13px;letter-spacing:.02em}
 .note{font-size:12.5px;font-weight:600;color:var(--ink-soft);text-align:center;margin:18px 0 0;line-height:1.5}
@@ -274,6 +277,22 @@ document.addEventListener('DOMContentLoaded',function(){
   </div>
 </div>
 
+<div class="sheet" id="notifSheet" role="dialog" aria-modal="true">
+  <h2>Avisos de cobro</h2>
+  <p class="notif-txt" id="notifState">Revisando…</p>
+  <button class="btn" id="notifEnable" style="width:100%;margin-bottom:14px">Activar en este dispositivo</button>
+  <label for="fDays">Avisarme con</label>
+  <select id="fDays">
+    <option value="1">1 día de anticipación</option>
+    <option value="2">2 días de anticipación</option>
+    <option value="3">3 días de anticipación</option>
+    <option value="5">5 días de anticipación</option>
+    <option value="7">7 días de anticipación</option>
+  </select>
+  <p class="notif-txt" style="margin-bottom:16px">El aviso llega en la mañana. Cada dispositivo se activa por separado: si quieres que a Gaby también le lleguen, ella tiene que activarlo en el suyo.</p>
+  <div class="sheet-actions"><button class="btn ghost" id="notifClose" style="flex:1">Cerrar</button></div>
+</div>
+
 <div class="wrap">
   <div class="head">
     <div style="min-width:0">
@@ -281,6 +300,9 @@ document.addEventListener('DOMContentLoaded',function(){
       <h1 id="viewTitle">Mis suscripciones</h1>
     </div>
     <div style="display:flex">
+    <button class="icon-btn" id="notifBtn" aria-label="Notificaciones" style="margin-right:8px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10.5 20a2 2 0 0 0 3 0"/></svg>
+    </button>
     <button class="icon-btn" id="shareBtn" aria-label="Compartir hogar" style="margin-right:8px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
     </button>
@@ -391,7 +413,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <script type="module">
 const SDK="https://www.gstatic.com/firebasejs/12.17.1/";
-let FS=null, fdb=null, fbError='';
+let FS=null, fdb=null, fbApp=null, fbError='';
+const VAPID="BNR-fZBJgo8cr2nrejwxaU38pYTcxASkIb_ufRLcwEhJLfqf0nmn7hHvBop3ELqC_sq4FthzDyb4JgVAMboeA7Y";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAIBI_0S-GXSN0oAYg_65zAzy7SVc9eexA",
@@ -409,7 +432,8 @@ async function loadFirebase(){
     timeout
   ]);
   FS = fsMod;
-  fdb = fsMod.getFirestore(appMod.initializeApp(firebaseConfig));
+  fbApp = appMod.initializeApp(firebaseConfig);
+  fdb = fsMod.getFirestore(fbApp);
 }
 
 const HOMEKEY='subs.home';
@@ -507,6 +531,8 @@ function listen(){
   subs=rows;saveLocal();setLive(true);renderAll();
  },()=>setLive(false));
  FS.onSnapshot(metaDoc(),d=>{
+  const dd=d.exists()?d.data().days:null;
+  if(dd>0){notifDays=dd;const el=document.getElementById('fDays');if(el)el.value=String(dd)}
   const v=d.exists()?d.data().fx:null;
   if(v>0&&v!==fxUSD){
    fxUSD=v;saveFx(v);
@@ -535,7 +561,7 @@ let fxTimer=null;
 function pushFx(v){
  if(!HOME||!fdb)return;
  clearTimeout(fxTimer);
- fxTimer=setTimeout(()=>{FS.setDoc(metaDoc(),{fx:v}).catch(()=>{})},700);
+ fxTimer=setTimeout(()=>{FS.setDoc(metaDoc(),{fx:v},{merge:true}).catch(()=>{})},700);
 }
 
 /* ---------- hogar ---------- */
@@ -584,11 +610,81 @@ function closeShare(){
  document.getElementById('shareSheet').classList.remove('on');
 }
 document.getElementById('shareClose').addEventListener('click',closeShare);
-document.getElementById('scrim2').addEventListener('click',closeShare);
+document.getElementById('scrim2').addEventListener('click',()=>{
+ closeShare();
+ document.getElementById('notifSheet').classList.remove('on');
+});
 document.getElementById('copyCode').addEventListener('click',async e=>{
  try{await navigator.clipboard.writeText(HOME);e.target.textContent='Copiado'}
  catch(err){e.target.textContent='Cópialo a mano'}
  setTimeout(()=>{e.target.textContent='Copiar código'},1800);
+});
+
+/* ---------- notificaciones ---------- */
+let notifDays=3;
+function setNotifState(txt,cls){
+ const el=document.getElementById('notifState');
+ el.textContent=txt;
+ el.className='notif-txt'+(cls?' '+cls:'');
+}
+function notifSupported(){
+ return ('Notification' in window) && ('serviceWorker' in navigator);
+}
+function refreshNotifUI(){
+ const btn=document.getElementById('notifEnable');
+ if(!notifSupported()){
+  setNotifState('Este navegador no puede recibir avisos. En iPhone hay que agregar la app a la pantalla de inicio primero.','bad');
+  btn.style.display='none';return;
+ }
+ if(Notification.permission==='granted'){
+  setNotifState('Activado en este dispositivo.','ok');
+  btn.textContent='Volver a registrar este dispositivo';
+ }else if(Notification.permission==='denied'){
+  setNotifState('Bloqueaste los avisos para este sitio. Hay que permitirlos desde los ajustes del navegador (el candado junto a la dirección).','bad');
+  btn.style.display='none';
+ }else{
+  setNotifState('Todavía no está activado aquí.');
+  btn.textContent='Activar en este dispositivo';
+ }
+}
+async function enableNotif(){
+ if(!fdb){setNotifState('Primero hay que conectar con la base de datos.','bad');return}
+ if(!HOME){setNotifState('Primero entra a un hogar.','bad');return}
+ try{
+  setNotifState('Pidiendo permiso…');
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted'){refreshNotifUI();return}
+  setNotifState('Registrando este dispositivo…');
+  const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
+  await navigator.serviceWorker.ready;
+  const mm=await import(SDK+'firebase-messaging.js');
+  const messaging=mm.getMessaging(fbApp);
+  const token=await mm.getToken(messaging,{vapidKey:VAPID,serviceWorkerRegistration:reg});
+  if(!token){setNotifState('No se pudo obtener el registro. Intenta de nuevo.','bad');return}
+  const id=token.replace(/[^A-Za-z0-9_-]/g,'_').slice(0,120);
+  await FS.setDoc(FS.doc(FS.collection(fdb,'homes',HOME,'tokens'),id),
+   {token:token,ua:(navigator.userAgent||'').slice(0,140),ts:Date.now()});
+  mm.onMessage(messaging,()=>{});
+  setNotifState('Listo. Este dispositivo va a recibir los avisos.','ok');
+  document.getElementById('notifEnable').textContent='Volver a registrar este dispositivo';
+ }catch(e){
+  setNotifState('Falló: '+((e&&e.message)||e),'bad');
+ }
+}
+document.getElementById('notifBtn').addEventListener('click',()=>{
+ document.getElementById('fDays').value=String(notifDays);
+ refreshNotifUI();
+ document.getElementById('scrim2').classList.add('on');
+ document.getElementById('notifSheet').classList.add('on');
+});
+document.getElementById('notifEnable').addEventListener('click',enableNotif);
+document.getElementById('notifClose').addEventListener('click',()=>{
+ document.getElementById('scrim2').classList.remove('on');
+ document.getElementById('notifSheet').classList.remove('on');
+});
+document.getElementById('fDays').addEventListener('change',e=>{
+ notifDays=parseInt(e.target.value,10)||3;
+ if(fdb&&HOME)FS.setDoc(metaDoc(),{days:notifDays},{merge:true}).catch(()=>{});
 });
 
 /* ---------- lista ---------- */
@@ -854,7 +950,9 @@ loadFirebase()
  .then(()=>{  if(HOME)listen(); })
  .catch(e=>{  showFbError((e&&e.message)||String(e)); });
 
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&Notification&&Notification.permission==='granted'){
+ navigator.serviceWorker.register('firebase-messaging-sw.js').catch(()=>{});
+}
 </script>
 </body>
 </html>
